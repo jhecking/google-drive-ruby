@@ -31,6 +31,7 @@ module GoogleDrive
           @list = nil
 
           @save_batch_size = 250
+          @start_row = 0
 
         end
 
@@ -40,6 +41,9 @@ module GoogleDrive
         # Batch size for saving changes
         # Lower this value when experiencing issues with timeout errors as per issue #38.
         attr_writer(:save_batch_size)
+
+        # Load only rows starting from this row
+        attr_accessor(:start_row)
 
         # URL of worksheet feed URL of the worksheet.
         def worksheet_feed_url
@@ -225,7 +229,16 @@ module GoogleDrive
         # Note that changes you made by []= etc. is discarded if you haven't called save().
         def reload()
 
-          doc = @session.request(:get, @cells_feed_url)
+          docs = []
+          if start_row > 1
+            header = @session.request(:get, @cells_feed_url + '?min-row=1&max-row=1')
+            doc    = @session.request(:get, @cells_feed_url + "?min-row=#{start_row}")
+            docs << header << doc
+          else
+            doc = @session.request(:get, @cells_feed_url)
+            docs << doc
+          end
+
           @max_rows = doc.css("gs|rowCount").text.to_i()
           @max_cols = doc.css("gs|colCount").text.to_i()
           @title = doc.css("feed > title")[0].text
@@ -236,14 +249,16 @@ module GoogleDrive
           @cells = {}
           @input_values = {}
           @numeric_values = {}
-          doc.css("feed > entry").each() do |entry|
-            cell = entry.css("gs|cell")[0]
-            row = cell["row"].to_i()
-            col = cell["col"].to_i()
-            @cells[[row, col]] = cell.inner_text
-            @input_values[[row, col]] = cell["inputValue"]
-            numeric_value = cell["numericValue"]
-            @numeric_values[[row, col]] = numeric_value ? numeric_value.to_f() : nil
+          docs.each do |doc|
+            doc.css("feed > entry").each() do |entry|
+              cell = entry.css("gs|cell")[0]
+              row = cell["row"].to_i()
+              col = cell["col"].to_i()
+              @cells[[row, col]] = cell.inner_text
+              @input_values[[row, col]] = cell["inputValue"]
+              numeric_value = cell["numericValue"]
+              @numeric_values[[row, col]] = numeric_value ? numeric_value.to_f() : nil
+            end
           end
           @modified.clear()
           @meta_modified = false
