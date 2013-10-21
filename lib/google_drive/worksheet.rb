@@ -31,7 +31,7 @@ module GoogleDrive
           @list = nil
 
           @save_batch_size = 250
-          @start_row = 0
+          @query_options = {}
 
         end
 
@@ -42,8 +42,11 @@ module GoogleDrive
         # Lower this value when experiencing issues with timeout errors as per issue #38.
         attr_writer(:save_batch_size)
 
-        # Load only rows starting from this row
-        attr_accessor(:start_row)
+        # Query options included when fetching worksheet data (e.g. min-row, max-row, etc.)
+        attr_reader(:query_options)
+        def query_option(name, value)
+          query_options[name.to_s] = value
+        end
 
         # URL of worksheet feed URL of the worksheet.
         def worksheet_feed_url
@@ -230,10 +233,14 @@ module GoogleDrive
         def reload()
 
           docs = []
-          if start_row > 1
-            header = @session.request(:get, @cells_feed_url + '?min-row=1&max-row=1')
-            doc    = @session.request(:get, @cells_feed_url + "?min-row=#{start_row}")
-            docs << header << doc
+          if !query_options.blank?
+            if query_options.fetch("min-row"){ 0 } > 1 || query_options.fetch("min-col"){ 0 } > 1
+              header = @session.request(:get, @cells_feed_url + '?min-row=1&max-row=1')
+              docs << header
+            end
+            query = URI.encode_www_form(query_options)
+            doc = @session.request(:get, @cells_feed_url + ?? + query)
+            docs << doc
           else
             doc = @session.request(:get, @cells_feed_url)
             docs << doc
